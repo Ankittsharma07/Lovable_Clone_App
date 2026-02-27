@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { FileNode, ViewMode } from '../types';
 import { EyeIcon, CodeIcon, FileIcon, RefreshCwIcon, DownloadIcon } from './Icons';
+import JSZip from 'jszip';
 
 interface PreviewAreaProps {
   files: FileNode[];
@@ -12,6 +13,7 @@ interface PreviewAreaProps {
 export const PreviewArea: React.FC<PreviewAreaProps> = ({ files, previewHtml, viewMode, setViewMode }) => {
   const [activeFile, setActiveFile] = useState<FileNode | null>(null);
   const [key, setKey] = useState(0); // Used to force reload iframe
+  const [isPreparingZip, setIsPreparingZip] = useState(false);
 
   // Select first file by default when files change
   useEffect(() => {
@@ -27,22 +29,56 @@ export const PreviewArea: React.FC<PreviewAreaProps> = ({ files, previewHtml, vi
     setKey(k => k + 1);
   };
 
-  const handleDownload = () => {
-    if (files.length === 0) return;
+  const handleDownloadActiveFile = () => {
+    if (!activeFile) return;
 
-    const payload = {
-      exportedAt: new Date().toISOString(),
-      previewHtml,
-      files,
-    };
-
-    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    const blob = new Blob([activeFile.content], { type: 'text/plain;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
+    const fileName = activeFile.name.split('/').pop() || 'generated-file.txt';
     a.href = url;
-    a.download = `lovable-export-${Date.now()}.json`;
+    a.download = fileName;
     a.click();
     URL.revokeObjectURL(url);
+  };
+
+  const handleDownloadZip = async () => {
+    if (files.length === 0) return;
+
+    setIsPreparingZip(true);
+    try {
+      const zip = new JSZip();
+      const normalizedFiles = files.map((file) => ({
+        ...file,
+        name: file.name.replaceAll('\\', '/').replace(/^\/+/, ''),
+      }));
+
+      normalizedFiles.forEach((file) => {
+        zip.file(file.name, file.content);
+      });
+
+      if (previewHtml.trim()) {
+        zip.file('preview.html', previewHtml);
+      }
+
+      zip.file('manifest.json', JSON.stringify({
+        exportedAt: new Date().toISOString(),
+        fileCount: normalizedFiles.length,
+        files: normalizedFiles.map((f) => ({ name: f.name, language: f.language })),
+      }, null, 2));
+
+      const blob = await zip.generateAsync({ type: 'blob' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `lovable-project-${Date.now()}.zip`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('[Export] Failed to build ZIP.', error);
+    } finally {
+      setIsPreparingZip(false);
+    }
   };
 
   return (
@@ -80,9 +116,19 @@ export const PreviewArea: React.FC<PreviewAreaProps> = ({ files, previewHtml, vi
           </span>
           {files.length > 0 && (
             <button
-              onClick={handleDownload}
+              onClick={handleDownloadZip}
+              disabled={isPreparingZip}
+              className="rounded-md p-2 text-zinc-300 transition-colors hover:bg-white/10 hover:text-white disabled:cursor-not-allowed disabled:opacity-60"
+              title={isPreparingZip ? 'Preparing zip...' : 'Download generated project as ZIP'}
+            >
+              <DownloadIcon className="h-4 w-4" />
+            </button>
+          )}
+          {files.length > 0 && viewMode === ViewMode.CODE && activeFile && (
+            <button
+              onClick={handleDownloadActiveFile}
               className="rounded-md p-2 text-zinc-300 transition-colors hover:bg-white/10 hover:text-white"
-              title="Download generated files as JSON"
+              title="Download active file"
             >
               <DownloadIcon className="h-4 w-4" />
             </button>
