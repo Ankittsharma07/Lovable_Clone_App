@@ -8,9 +8,10 @@ interface ChatAreaProps {
   setInput: (v: string) => void;
   onSend: () => void;
   status: GenerationStatus;
+  requestCount: number;
 }
 
-export const ChatArea: React.FC<ChatAreaProps> = ({ messages, input, setInput, onSend, status }) => {
+export const ChatArea: React.FC<ChatAreaProps> = ({ messages, input, setInput, onSend, status, requestCount }) => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -38,13 +39,25 @@ export const ChatArea: React.FC<ChatAreaProps> = ({ messages, input, setInput, o
   }, [input]);
 
   return (
-    <div className="flex flex-col h-full bg-background border-r border-border relative">
+    <div className="relative flex h-full flex-col bg-transparent">
+      <div className="border-b border-white/10 bg-white/[0.03] px-4 py-3">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-xs uppercase tracking-[0.2em] text-cyan-200/80">Prompt Console</p>
+            <h2 className="text-sm font-semibold text-white">Build and Iterate</h2>
+          </div>
+          <div className="rounded-full border border-white/15 bg-white/5 px-3 py-1 text-xs text-zinc-200">
+            API calls: {requestCount}
+          </div>
+        </div>
+      </div>
+
       <div className="flex-1 overflow-y-auto p-4 space-y-6">
         {messages.length === 0 && (
-          <div className="flex flex-col items-center justify-center h-full text-muted opacity-50 mt-20">
-            <SparklesIcon className="w-12 h-12 mb-4 text-primary" />
-            <h2 className="text-xl font-semibold mb-2">What do you want to build?</h2>
-            <p className="text-sm text-center max-w-xs">
+          <div className="mt-20 flex h-full flex-col items-center justify-center opacity-80">
+            <SparklesIcon className="mb-4 h-12 w-12 text-cyan-300" />
+            <h2 className="mb-2 text-xl font-semibold text-zinc-100">What do you want to build?</h2>
+            <p className="max-w-xs text-center text-sm text-zinc-400">
               Describe your dream app, and I'll generate the code and a live preview instantly.
             </p>
           </div>
@@ -53,14 +66,14 @@ export const ChatArea: React.FC<ChatAreaProps> = ({ messages, input, setInput, o
         {messages.map((msg) => (
           <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
             <div 
-              className={`max-w-[85%] rounded-2xl p-4 text-sm leading-relaxed ${
+              className={`max-w-[85%] rounded-2xl p-4 text-sm leading-relaxed shadow-lg ${
                 msg.role === 'user' 
-                  ? 'bg-primary text-white rounded-br-none' 
-                  : 'bg-surface border border-border text-gray-200 rounded-bl-none shadow-sm'
+                  ? 'rounded-br-none bg-gradient-to-br from-cyan-500 to-blue-600 text-white' 
+                  : 'rounded-bl-none border border-white/15 bg-white/[0.04] text-zinc-200'
               }`}
             >
               {msg.role === 'assistant' && (
-                <div className="flex items-center gap-2 mb-2 text-xs font-semibold text-primary">
+                <div className="mb-2 flex items-center gap-2 text-xs font-semibold text-cyan-200">
                   <SparklesIcon className="w-3 h-3" />
                   <span>AI Builder</span>
                 </div>
@@ -72,9 +85,9 @@ export const ChatArea: React.FC<ChatAreaProps> = ({ messages, input, setInput, o
 
         {status.isGenerating && (
           <div className="flex justify-start">
-             <div className="max-w-[85%] rounded-2xl p-4 bg-surface border border-border rounded-bl-none shadow-sm flex items-center gap-3">
+             <div className="flex max-w-[85%] items-center gap-3 rounded-2xl rounded-bl-none border border-white/15 bg-white/[0.04] p-4 shadow-sm">
                 <LoaderIcon className="w-5 h-5 animate-spin text-primary" />
-                <span className="text-sm text-muted animate-pulse">
+                <span className="animate-pulse text-sm text-zinc-300">
                   {status.step === 'thinking' ? 'Analyzing requirements...' : 'Generating code...'}
                 </span>
              </div>
@@ -83,22 +96,22 @@ export const ChatArea: React.FC<ChatAreaProps> = ({ messages, input, setInput, o
         <div ref={messagesEndRef} />
       </div>
 
-      <div className="p-4 bg-background border-t border-border z-10">
-        <div className="relative glass rounded-xl border border-border shadow-lg focus-within:ring-2 focus-within:ring-primary/20 transition-all duration-300">
+      <div className="z-10 border-t border-white/10 bg-black/20 p-4">
+        <div className="relative rounded-xl border border-white/15 bg-white/[0.03] shadow-lg transition-all duration-300 focus-within:ring-2 focus-within:ring-cyan-300/20">
           <textarea
             ref={textareaRef}
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder="Build a landing page for a coffee shop..."
-            className="w-full bg-transparent text-white placeholder-muted p-4 pr-12 resize-none focus:outline-none text-sm max-h-[120px] overflow-y-auto"
+            className="max-h-[120px] w-full resize-none overflow-y-auto bg-transparent p-4 pr-12 text-sm text-white placeholder:text-zinc-500 focus:outline-none"
             rows={1}
             disabled={status.isGenerating}
           />
           <button
             onClick={onSend}
             disabled={!input.trim() || status.isGenerating}
-            className="absolute right-2 bottom-2 p-2 bg-primary hover:bg-primary-hover text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            className="absolute bottom-2 right-2 rounded-lg bg-cyan-500 p-2 text-white transition-colors hover:bg-cyan-400 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {status.isGenerating ? <LoaderIcon className="w-4 h-4 animate-spin" /> : <SendIcon className="w-4 h-4" />}
           </button>
