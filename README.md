@@ -27,3 +27,10 @@ View your app in AI Studio: https://ai.studio/apps/drive/1CpgquTNczq5bVAfSbEZJ_S
   - request start/complete/fail from UI layer
   - Gemini API call start/success/fail/finish
   - running totals: `total`, `success`, `failed`, `inFlight`
+
+## Generated code storage and download
+
+- Latest workspace is saved in browser `localStorage` key: `lovableClone.latestWorkspace`.
+- In the Code/Preview header:
+  - `Download` icon exports all generated files as a `.zip` project.
+  - In `Code` view, `Download` icon can also export the currently opened file.
