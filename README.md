@@ -18,3 +18,12 @@ View your app in AI Studio: https://ai.studio/apps/drive/1CpgquTNczq5bVAfSbEZJ_S
 2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
 3. Run the app:
    `npm run dev`
+
+## Gemini API call tracking
+
+- Each user send action triggers exactly one `generateApp` API call.
+- Duplicate submits are blocked while a request is already in flight.
+- Console logs include:
+  - request start/complete/fail from UI layer
+  - Gemini API call start/success/fail/finish
+  - running totals: `total`, `success`, `failed`, `inFlight`

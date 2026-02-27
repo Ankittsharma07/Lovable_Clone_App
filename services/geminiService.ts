@@ -1,6 +1,24 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { GeneratedApp, FileNode } from '../types';
 
+interface GeminiApiMetrics {
+  totalCalls: number;
+  successfulCalls: number;
+  failedCalls: number;
+  inFlightCalls: number;
+}
+
+const geminiApiMetrics: GeminiApiMetrics = {
+  totalCalls: 0,
+  successfulCalls: 0,
+  failedCalls: 0,
+  inFlightCalls: 0,
+};
+
+const logGeminiMetrics = (event: string) => {
+  console.info(`[Gemini API] ${event} | totals => total: ${geminiApiMetrics.totalCalls}, success: ${geminiApiMetrics.successfulCalls}, failed: ${geminiApiMetrics.failedCalls}, inFlight: ${geminiApiMetrics.inFlightCalls}`);
+};
+
 const getAiClient = () => {
   const apiKey = process.env.API_KEY;
   if (!apiKey) {
@@ -55,8 +73,16 @@ RULES:
 
 export const generateApp = async (
   prompt: string,
-  history: { role: string; text: string }[]
+  history: { role: string; text: string }[],
+  requestId?: string
 ): Promise<GeneratedApp> => {
+  const callNumber = geminiApiMetrics.totalCalls + 1;
+  const callTag = `call-${callNumber}${requestId ? ` (${requestId})` : ''}`;
+  const callStartedAt = Date.now();
+  geminiApiMetrics.totalCalls = callNumber;
+  geminiApiMetrics.inFlightCalls += 1;
+  logGeminiMetrics(`${callTag} STARTED`);
+
   try {
     const ai = getAiClient();
     
@@ -88,10 +114,19 @@ export const generateApp = async (
     if (!jsonText) throw new Error("No response from AI");
 
     const parsed: GeneratedApp = JSON.parse(jsonText);
+    geminiApiMetrics.successfulCalls += 1;
+    const elapsedMs = Date.now() - callStartedAt;
+    logGeminiMetrics(`${callTag} SUCCEEDED in ${elapsedMs}ms`);
     return parsed;
 
   } catch (error) {
+    geminiApiMetrics.failedCalls += 1;
+    const elapsedMs = Date.now() - callStartedAt;
+    logGeminiMetrics(`${callTag} FAILED in ${elapsedMs}ms`);
     console.error("Gemini Generation Error:", error);
     throw error;
+  } finally {
+    geminiApiMetrics.inFlightCalls = Math.max(0, geminiApiMetrics.inFlightCalls - 1);
+    logGeminiMetrics(`${callTag} FINISHED`);
   }
 };
