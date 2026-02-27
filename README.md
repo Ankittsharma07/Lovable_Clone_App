@@ -1,36 +1,130 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
+# Lovable Clone: AI App Builder
 
-# Run and deploy your AI Studio app
+A production-style React + TypeScript application that converts natural language prompts into a generated app preview and code workspace using Gemini.
 
-This contains everything you need to run your app locally.
+## Why This Project Stands Out
 
-View your app in AI Studio: https://ai.studio/apps/drive/1CpgquTNczq5bVAfSbEZJ_SUV7iSPwSoi
+- End-to-end product thinking: prompt -> generation -> preview -> code explorer -> export.
+- Real AI integration with observable request lifecycle and API call metrics.
+- Strong UX details: responsive layout, improved visual hierarchy, conversation flow, and fast interactions.
+- Practical user value: local workspace persistence and downloadable generated project files.
 
-## Run Locally
+## Core Features
 
-**Prerequisites:**  Node.js
+- Prompt-based app generation powered by Gemini (`@google/genai`).
+- Live preview pane (`iframe`) for generated `previewHtml`.
+- Code explorer for generated file tree and source inspection.
+- One user request = one Gemini API call (duplicate submit protection).
+- API call logging with totals in console (`total`, `success`, `failed`, `inFlight`).
+- Workspace auto-save in browser `localStorage`.
+- Export generated output:
+  - download full project as `.zip`
+  - download active file from code view
 
+## Tech Stack
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+- Frontend: React 19, TypeScript, Vite
+- AI SDK: `@google/genai`
+- Export utility: `jszip`
+- Styling: Tailwind CDN + custom theme tokens
 
-## Gemini API call tracking
+## Architecture Flow
 
-- Each user send action triggers exactly one `generateApp` API call.
-- Duplicate submits are blocked while a request is already in flight.
-- Console logs include:
-  - request start/complete/fail from UI layer
-  - Gemini API call start/success/fail/finish
-  - running totals: `total`, `success`, `failed`, `inFlight`
+```text
+User Prompt
+  -> App.tsx (request orchestration + state + persistence)
+  -> services/geminiService.ts (Gemini call + metrics logging)
+  -> GeneratedApp payload (previewHtml + files + explanation)
+  -> PreviewArea.tsx (preview/code/extract/download)
+  -> ChatArea.tsx (conversation timeline + input)
+```
 
-## Generated code storage and download
+## Project Structure
 
-- Latest workspace is saved in browser `localStorage` key: `lovableClone.latestWorkspace`.
-- In the Code/Preview header:
-  - `Download` icon exports all generated files as a `.zip` project.
-  - In `Code` view, `Download` icon can also export the currently opened file.
+```text
+.
+|-- App.tsx
+|-- index.tsx
+|-- index.html
+|-- types.ts
+|-- services/
+|   `-- geminiService.ts
+`-- components/
+    |-- ChatArea.tsx
+    |-- PreviewArea.tsx
+    `-- Icons.tsx
+```
+
+## Getting Started
+
+### Prerequisites
+
+- Node.js 18+
+- npm
+
+### Installation
+
+```bash
+npm install
+```
+
+### Environment Setup
+
+Create `.env.local` in project root:
+
+```env
+GEMINI_API_KEY=your_gemini_api_key
+```
+
+### Run in Development
+
+```bash
+npm run dev
+```
+
+Open `http://localhost:3000`.
+
+### Production Build
+
+```bash
+npm run build
+npm run preview
+```
+
+## API Observability
+
+This project logs both UI request lifecycle and Gemini API lifecycle in the browser console:
+
+- UI layer:
+  - request start
+  - request complete
+  - request failed
+- Gemini service layer:
+  - call started
+  - call succeeded/failed
+  - running totals
+
+This makes debugging and usage tracking straightforward during demos and interviews.
+
+## Persistence and Export
+
+- Workspace key: `localStorage["lovableClone.latestWorkspace"]`
+- Auto-restores latest session on refresh.
+- Export options from preview/code header:
+  - full generated project as `.zip`
+  - active file as single download
+
+## NPM Scripts
+
+- `npm run dev`: start local dev server
+- `npm run build`: create production build
+- `npm run preview`: preview production build locally
+
+## Security Notes
+
+- Never commit real API keys.
+- Keep `.env.local` private and rotate keys if exposed.
+
+## Demo Link
+
+- AI Studio reference: `https://ai.studio/apps/drive/1CpgquTNczq5bVAfSbEZJ_SUV7iSPwSoi`
