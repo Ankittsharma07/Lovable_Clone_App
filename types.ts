@@ -11,6 +11,25 @@ export interface ChatMessage {
   timestamp: number;
 }
 
+export interface WorkspaceSnapshot {
+  title: string;
+  messages: ChatMessage[];
+  files: FileNode[];
+  previewHtml: string;
+  requestCount: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface WorkspaceSummary {
+  id: string;
+  title: string;
+  createdAt: number;
+  updatedAt: number;
+  requestCount: number;
+  messageCount: number;
+}
+
 export interface GeneratedApp {
   previewHtml: string;
   files: FileNode[];
