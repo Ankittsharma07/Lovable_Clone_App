@@ -2,14 +2,16 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   createUserWithEmailAndPassword,
   onAuthStateChanged,
+  sendPasswordResetEmail,
   signInWithEmailAndPassword,
   signInWithPopup,
   signOut,
   User,
 } from 'firebase/auth';
-import { ChatMessage, GenerationStatus, ViewMode, WorkspaceSnapshot, WorkspaceSummary } from './types';
-import { generateApp } from './services/geminiService';
+import { ChatMessage, GenerationStatus, UserSettings, ViewMode, WorkspaceSnapshot, WorkspaceSummary } from './types';
+import { generateApp, validateGeminiApiKey } from './services/geminiService';
 import { auth, googleAuthProvider, initFirebaseAnalytics } from './services/firebase';
+import { getUserSettings, saveUserSettings } from './services/userSettingsService';
 import {
   createEmptyWorkspaceSnapshot,
   createWorkspace,
@@ -19,9 +21,11 @@ import {
   saveWorkspace,
 } from './services/workspaceService';
 import { AuthPage } from './components/AuthPage';
+import { ApiKeyGate } from './components/ApiKeyGate';
 import { ChatArea } from './components/ChatArea';
 import { HistoryPanel } from './components/HistoryPanel';
 import { PreviewArea } from './components/PreviewArea';
+import { SettingsPanel } from './components/SettingsPanel';
 
 const SAVE_DEBOUNCE_MS = 900;
 
@@ -61,6 +65,38 @@ const AuthLoadingScreen: React.FC = () => (
   </div>
 );
 
+const EMPTY_USER_SETTINGS: UserSettings = {
+  geminiApiKey: '',
+  hasGeminiApiKey: false,
+  updatedAt: 0,
+};
+
+const stripCodeFence = (value: string) =>
+  value
+    .trim()
+    .replace(/^```(?:html)?\s*/i, '')
+    .replace(/\s*```$/i, '')
+    .trim();
+
+const looksLikeRenderableHtml = (value: string) => /<!DOCTYPE html>|<html[\s>]|<body[\s>]|<div[\s>]|<main[\s>]|<section[\s>]/i.test(value);
+
+const resolvePreviewHtml = (previewHtml: string, files: WorkspaceSnapshot['files']) => {
+  const normalizedPreview = stripCodeFence(previewHtml);
+  if (looksLikeRenderableHtml(normalizedPreview)) {
+    return normalizedPreview;
+  }
+
+  const htmlFile = files.find((file) => /\.html?$/i.test(file.name));
+  if (htmlFile) {
+    const fallbackHtml = stripCodeFence(htmlFile.content);
+    if (looksLikeRenderableHtml(fallbackHtml)) {
+      return fallbackHtml;
+    }
+  }
+
+  return normalizedPreview;
+};
+
 const App: React.FC = () => {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
@@ -80,6 +116,13 @@ const App: React.FC = () => {
   const [authPassword, setAuthPassword] = useState('');
   const [authBusy, setAuthBusy] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
+  const [userSettings, setUserSettings] = useState<UserSettings>(EMPTY_USER_SETTINGS);
+  const [apiKeyDraft, setApiKeyDraft] = useState('');
+  const [isSettingsLoading, setIsSettingsLoading] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isApiKeySaving, setIsApiKeySaving] = useState(false);
+  const [settingsError, setSettingsError] = useState<string | null>(null);
+  const [settingsNotice, setSettingsNotice] = useState<string | null>(null);
 
   const [workspaces, setWorkspaces] = useState<WorkspaceSummary[]>([]);
   const [activeWorkspaceId, setActiveWorkspaceId] = useState<string | null>(null);
@@ -91,9 +134,10 @@ const App: React.FC = () => {
   const hasLoadedWorkspaceRef = useRef(false);
 
   const applyWorkspaceState = useCallback((snapshot: WorkspaceSnapshot, workspaceId: string | null) => {
+    const resolvedPreviewHtml = resolvePreviewHtml(snapshot.previewHtml, snapshot.files);
     setMessages(snapshot.messages);
     setFiles(snapshot.files);
-    setPreviewHtml(snapshot.previewHtml);
+    setPreviewHtml(resolvedPreviewHtml);
     setRequestCount(snapshot.requestCount);
     setWorkspaceCreatedAt(snapshot.createdAt);
     setActiveWorkspaceId(workspaceId);
@@ -177,20 +221,33 @@ const App: React.FC = () => {
       setAuthReady(true);
       setAuthError(null);
       setWorkspaceError(null);
+      setSettingsError(null);
+      setSettingsNotice(null);
       hasLoadedWorkspaceRef.current = false;
 
       if (!nextUser) {
         setWorkspaces([]);
+        setUserSettings(EMPTY_USER_SETTINGS);
+        setApiKeyDraft('');
+        setIsSettingsOpen(false);
+        setIsHistoryOpen(false);
         resetWorkspaceState();
         hasLoadedWorkspaceRef.current = true;
         return;
       }
 
       setIsWorkspaceLoading(true);
+      setIsSettingsLoading(true);
 
       try {
-        const nextWorkspaces = await listUserWorkspaces(nextUser.uid);
+        const [nextWorkspaces, nextSettings] = await Promise.all([
+          listUserWorkspaces(nextUser.uid),
+          getUserSettings(nextUser.uid),
+        ]);
+
         setWorkspaces(nextWorkspaces);
+        setUserSettings(nextSettings);
+        setApiKeyDraft(nextSettings.geminiApiKey);
 
         if (nextWorkspaces.length > 0) {
           const latestWorkspace = await getWorkspaceById(nextUser.uid, nextWorkspaces[0].id);
@@ -209,6 +266,7 @@ const App: React.FC = () => {
       } finally {
         hasLoadedWorkspaceRef.current = true;
         setIsWorkspaceLoading(false);
+        setIsSettingsLoading(false);
       }
     });
 
@@ -298,6 +356,94 @@ const App: React.FC = () => {
     }
   }, []);
 
+  const handleOpenSettings = useCallback(() => {
+    setApiKeyDraft(userSettings.geminiApiKey);
+    setSettingsError(null);
+    setSettingsNotice(null);
+    setIsSettingsOpen(true);
+  }, [userSettings.geminiApiKey]);
+
+  const handleSaveApiKey = useCallback(async () => {
+    if (!user) {
+      return;
+    }
+
+    const trimmedApiKey = apiKeyDraft.trim();
+    if (!trimmedApiKey) {
+      setSettingsError('Paste your Gemini API key before saving.');
+      setSettingsNotice(null);
+      return;
+    }
+
+    setIsApiKeySaving(true);
+    setSettingsError(null);
+    setSettingsNotice(null);
+
+    try {
+      await validateGeminiApiKey(trimmedApiKey);
+      const nextSettings = await saveUserSettings(user.uid, {
+        geminiApiKey: trimmedApiKey,
+        hasGeminiApiKey: true,
+      });
+
+      setUserSettings(nextSettings);
+      setApiKeyDraft(nextSettings.geminiApiKey);
+      setSettingsNotice('Gemini API key saved successfully.');
+    } catch (error) {
+      console.error('[Settings] Failed to save Gemini API key.', error);
+      setSettingsError(getReadableAuthError(error));
+    } finally {
+      setIsApiKeySaving(false);
+    }
+  }, [apiKeyDraft, user]);
+
+  const handleClearApiKey = useCallback(async () => {
+    if (!user) {
+      return;
+    }
+
+    setIsApiKeySaving(true);
+    setSettingsError(null);
+    setSettingsNotice(null);
+
+    try {
+      const nextSettings = await saveUserSettings(user.uid, {
+        geminiApiKey: '',
+        hasGeminiApiKey: false,
+      });
+
+      setUserSettings(nextSettings);
+      setApiKeyDraft('');
+      setIsSettingsOpen(false);
+      setSettingsNotice('Gemini API key removed. Add a new key to use the workspace again.');
+    } catch (error) {
+      console.error('[Settings] Failed to clear Gemini API key.', error);
+      setSettingsError('Could not remove the saved API key.');
+    } finally {
+      setIsApiKeySaving(false);
+    }
+  }, [user]);
+
+  const handleSendPasswordReset = useCallback(async () => {
+    if (!user?.email) {
+      return;
+    }
+
+    setIsApiKeySaving(true);
+    setSettingsError(null);
+    setSettingsNotice(null);
+
+    try {
+      await sendPasswordResetEmail(auth, user.email);
+      setSettingsNotice(`Password reset email sent to ${user.email}.`);
+    } catch (error) {
+      console.error('[Settings] Failed to send password reset email.', error);
+      setSettingsError('Could not send the password reset email right now.');
+    } finally {
+      setIsApiKeySaving(false);
+    }
+  }, [user]);
+
   const handleSelectWorkspace = useCallback(
     async (workspaceId: string) => {
       if (!user || workspaceId === activeWorkspaceId) {
@@ -317,7 +463,14 @@ const App: React.FC = () => {
   }, [resetWorkspaceState]);
 
   const handleSend = useCallback(async () => {
-    if (!user || !input.trim() || status.isGenerating || isRequestInFlightRef.current || isWorkspaceLoading) {
+    if (
+      !user ||
+      !userSettings.geminiApiKey ||
+      !input.trim() ||
+      status.isGenerating ||
+      isRequestInFlightRef.current ||
+      isWorkspaceLoading
+    ) {
       return;
     }
 
@@ -363,13 +516,14 @@ const App: React.FC = () => {
 
     try {
       const historyForAi = messages.map((message) => ({ role: message.role, text: message.text }));
-      const result = await generateApp(userMsg.text, historyForAi, requestId);
+      const result = await generateApp(userMsg.text, historyForAi, userSettings.geminiApiKey, requestId);
+      const resolvedPreviewHtml = resolvePreviewHtml(result.previewHtml, result.files);
 
       setStatus({ isGenerating: true, step: 'coding' });
       await new Promise((resolve) => setTimeout(resolve, 500));
 
       setFiles(result.files);
-      setPreviewHtml(result.previewHtml);
+      setPreviewHtml(resolvedPreviewHtml);
 
       const aiMsg: ChatMessage = {
         id: `${Date.now() + 1}`,
@@ -386,7 +540,7 @@ const App: React.FC = () => {
         title: deriveWorkspaceTitle(nextMessages),
         messages: nextMessages,
         files: result.files,
-        previewHtml: result.previewHtml,
+        previewHtml: resolvedPreviewHtml,
         requestCount: nextRequestCount,
         createdAt,
         updatedAt: Date.now(),
@@ -434,6 +588,7 @@ const App: React.FC = () => {
     requestCount,
     status.isGenerating,
     user,
+    userSettings.geminiApiKey,
     workspaceCreatedAt,
   ]);
 
@@ -443,7 +598,7 @@ const App: React.FC = () => {
       ? new Date(lastSavedAt).toLocaleTimeString()
       : 'No cloud save yet';
 
-  if (!authReady) {
+  if (!authReady || (user && isSettingsLoading)) {
     return <AuthLoadingScreen />;
   }
 
@@ -463,6 +618,8 @@ const App: React.FC = () => {
       />
     );
   }
+
+  const shouldShowApiKeyGate = !userSettings.hasGeminiApiKey;
 
   return (
     <div className="h-screen w-screen overflow-hidden bg-[#05070b] text-white">
@@ -489,6 +646,12 @@ const App: React.FC = () => {
                 History
               </button>
               <button
+                onClick={handleOpenSettings}
+                className="rounded-full border border-white/20 bg-white/10 px-3 py-1 text-white transition hover:bg-white/15"
+              >
+                Settings
+              </button>
+              <button
                 onClick={handleStartNewChat}
                 className="rounded-full border border-white/20 bg-white/10 px-3 py-1 text-white transition hover:bg-white/15"
               >
@@ -513,7 +676,7 @@ const App: React.FC = () => {
                 authBusy={authBusy}
                 onStartNewChat={handleStartNewChat}
                 onOpenHistory={() => setIsHistoryOpen(true)}
-                isWorkspaceLoading={isWorkspaceLoading}
+                isWorkspaceLoading={isWorkspaceLoading || shouldShowApiKeyGate}
               />
             </section>
             <section className="min-h-0 overflow-hidden rounded-2xl border border-white/10 bg-black/35 shadow-[0_20px_55px_-35px_rgba(0,0,0,0.95)] backdrop-blur">
@@ -537,6 +700,31 @@ const App: React.FC = () => {
           isWorkspaceLoading={isWorkspaceLoading}
           isWorkspaceSaving={isWorkspaceSaving}
           workspaceError={workspaceError}
+        />
+
+        <SettingsPanel
+          isOpen={isSettingsOpen}
+          onClose={() => setIsSettingsOpen(false)}
+          userEmail={user.email ?? 'Signed-in user'}
+          apiKeyDraft={apiKeyDraft}
+          setApiKeyDraft={setApiKeyDraft}
+          onSaveApiKey={handleSaveApiKey}
+          onClearApiKey={handleClearApiKey}
+          onSendPasswordReset={handleSendPasswordReset}
+          isSaving={isApiKeySaving}
+          error={settingsError}
+          notice={settingsNotice}
+          hasSavedApiKey={userSettings.hasGeminiApiKey}
+        />
+
+        <ApiKeyGate
+          isOpen={shouldShowApiKeyGate}
+          apiKeyDraft={apiKeyDraft}
+          setApiKeyDraft={setApiKeyDraft}
+          onSaveApiKey={handleSaveApiKey}
+          onLogout={handleLogout}
+          isSaving={isApiKeySaving}
+          error={settingsError}
         />
       </div>
     </div>

@@ -1,5 +1,5 @@
-import { GoogleGenAI, Type } from "@google/genai";
-import { GeneratedApp, FileNode } from '../types';
+import { GoogleGenAI, Type } from '@google/genai';
+import { GeneratedApp } from '../types';
 
 interface GeminiApiMetrics {
   totalCalls: number;
@@ -16,44 +16,47 @@ const geminiApiMetrics: GeminiApiMetrics = {
 };
 
 const logGeminiMetrics = (event: string) => {
-  console.info(`[Gemini API] ${event} | totals => total: ${geminiApiMetrics.totalCalls}, success: ${geminiApiMetrics.successfulCalls}, failed: ${geminiApiMetrics.failedCalls}, inFlight: ${geminiApiMetrics.inFlightCalls}`);
+  console.info(
+    `[Gemini API] ${event} | totals => total: ${geminiApiMetrics.totalCalls}, success: ${geminiApiMetrics.successfulCalls}, failed: ${geminiApiMetrics.failedCalls}, inFlight: ${geminiApiMetrics.inFlightCalls}`,
+  );
 };
 
-const getAiClient = () => {
-  const apiKey = process.env.API_KEY;
-  if (!apiKey) {
-    throw new Error("API Key not found in environment variables");
+const getAiClient = (apiKey: string) => {
+  const trimmedApiKey = apiKey.trim();
+  if (!trimmedApiKey) {
+    throw new Error('Gemini API key is required.');
   }
-  return new GoogleGenAI({ apiKey });
+
+  return new GoogleGenAI({ apiKey: trimmedApiKey });
 };
 
-// We define a schema to ensure structured output from Gemini
 const responseSchema = {
   type: Type.OBJECT,
   properties: {
     previewHtml: {
       type: Type.STRING,
-      description: "A single, self-contained HTML string that renders the requested application. It MUST use Tailwind CSS via CDN. It MUST include React and ReactDOM via CDN if interactivity is needed, or just plain HTML/JS. It should look like a production-ready app.",
+      description:
+        'A single, self-contained HTML string that renders the requested application. It MUST use Tailwind CSS via CDN. It MUST include React and ReactDOM via CDN if interactivity is needed, or just plain HTML/JS. It should look like a production-ready app.',
     },
     files: {
       type: Type.ARRAY,
-      description: "A list of simulated source code files representing the project structure.",
+      description: 'A list of simulated source code files representing the project structure.',
       items: {
         type: Type.OBJECT,
         properties: {
           name: { type: Type.STRING, description: "File path/name, e.g., 'src/App.tsx'" },
           language: { type: Type.STRING, description: "Language, e.g., 'typescript' or 'css'" },
-          content: { type: Type.STRING, description: "The full source code content." }
+          content: { type: Type.STRING, description: 'The full source code content.' },
         },
-        required: ["name", "language", "content"]
-      }
+        required: ['name', 'language', 'content'],
+      },
     },
     explanation: {
       type: Type.STRING,
-      description: "A brief, friendly explanation of what was built."
-    }
+      description: 'A brief, friendly explanation of what was built.',
+    },
   },
-  required: ["previewHtml", "files", "explanation"]
+  required: ['previewHtml', 'files', 'explanation'],
 };
 
 const SYSTEM_PROMPT = `
@@ -71,10 +74,25 @@ RULES:
 5. ITERATION: If the user asks for changes, you will receive the previous context. Modify the code accordingly.
 `;
 
+export const validateGeminiApiKey = async (apiKey: string): Promise<void> => {
+  const ai = getAiClient(apiKey);
+
+  await ai.models.generateContent({
+    model: 'gemini-2.5-flash',
+    contents: 'Reply with the single word VALID.',
+    config: {
+      temperature: 0,
+      maxOutputTokens: 8,
+      thinkingConfig: { thinkingBudget: 0 },
+    },
+  });
+};
+
 export const generateApp = async (
   prompt: string,
   history: { role: string; text: string }[],
-  requestId?: string
+  apiKey: string,
+  requestId?: string,
 ): Promise<GeneratedApp> => {
   const callNumber = geminiApiMetrics.totalCalls + 1;
   const callTag = `call-${callNumber}${requestId ? ` (${requestId})` : ''}`;
@@ -84,46 +102,42 @@ export const generateApp = async (
   logGeminiMetrics(`${callTag} STARTED`);
 
   try {
-    const ai = getAiClient();
-    
-    // Convert history to a format Gemini might understand or just append to prompt context
-    // Ideally, we use the chat history in the prompt context for single-shot generation
-    // or use a ChatSession. For this builder pattern, a stateless generateContent with context is often safer for strict JSON.
-    
+    const ai = getAiClient(apiKey);
     const contextPrompt = `
       Current Conversation History:
-      ${history.map(h => `${h.role.toUpperCase()}: ${h.text}`).join('\n')}
-      
+      ${history.map((entry) => `${entry.role.toUpperCase()}: ${entry.text}`).join('\n')}
+
       User's New Request: ${prompt}
-      
+
       Based on the history and new request, generate the updated application code and preview.
     `;
 
     const response = await ai.models.generateContent({
-      model: "gemini-3-flash-preview",
+      model: 'gemini-2.5-flash',
       contents: contextPrompt,
       config: {
         systemInstruction: SYSTEM_PROMPT,
-        responseMimeType: "application/json",
+        responseMimeType: 'application/json',
         responseSchema: responseSchema,
-        thinkingConfig: { thinkingBudget: 0 } // Fast response for UI
-      }
+        thinkingConfig: { thinkingBudget: 0 },
+      },
     });
 
     const jsonText = response.text;
-    if (!jsonText) throw new Error("No response from AI");
+    if (!jsonText) {
+      throw new Error('No response from AI');
+    }
 
     const parsed: GeneratedApp = JSON.parse(jsonText);
     geminiApiMetrics.successfulCalls += 1;
     const elapsedMs = Date.now() - callStartedAt;
     logGeminiMetrics(`${callTag} SUCCEEDED in ${elapsedMs}ms`);
     return parsed;
-
   } catch (error) {
     geminiApiMetrics.failedCalls += 1;
     const elapsedMs = Date.now() - callStartedAt;
     logGeminiMetrics(`${callTag} FAILED in ${elapsedMs}ms`);
-    console.error("Gemini Generation Error:", error);
+    console.error('Gemini Generation Error:', error);
     throw error;
   } finally {
     geminiApiMetrics.inFlightCalls = Math.max(0, geminiApiMetrics.inFlightCalls - 1);

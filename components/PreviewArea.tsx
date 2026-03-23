@@ -10,10 +10,74 @@ interface PreviewAreaProps {
   setViewMode: (mode: ViewMode) => void;
 }
 
+const PREVIEW_ERROR_SNIPPET = `
+<script>
+  (function () {
+    if (window.__lovablePreviewGuardInstalled) return;
+    window.__lovablePreviewGuardInstalled = true;
+
+    function showPreviewError(message) {
+      var existing = document.getElementById('__lovable_preview_error__');
+      if (!existing) {
+        existing = document.createElement('div');
+        existing.id = '__lovable_preview_error__';
+        existing.style.position = 'fixed';
+        existing.style.right = '16px';
+        existing.style.bottom = '16px';
+        existing.style.maxWidth = '560px';
+        existing.style.zIndex = '2147483647';
+        existing.style.background = 'rgba(10, 14, 24, 0.96)';
+        existing.style.color = '#f8fafc';
+        existing.style.border = '1px solid rgba(248, 113, 113, 0.45)';
+        existing.style.borderRadius = '16px';
+        existing.style.boxShadow = '0 20px 60px -24px rgba(0,0,0,0.95)';
+        existing.style.padding = '14px 16px';
+        existing.style.fontFamily = 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace';
+        existing.innerHTML = '<div style="font-family: system-ui, sans-serif; font-size: 12px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: #fda4af; margin-bottom: 8px;">Preview Runtime Error</div><pre style="margin:0; white-space:pre-wrap; word-break:break-word; font-size:12px; line-height:1.5;"></pre>';
+        document.body.appendChild(existing);
+      }
+
+      existing.querySelector('pre').textContent = String(message || 'Unknown preview error');
+    }
+
+    window.addEventListener('error', function (event) {
+      showPreviewError((event.error && event.error.stack) || event.message || 'Unknown preview error');
+    });
+
+    window.addEventListener('unhandledrejection', function (event) {
+      var reason = event.reason;
+      showPreviewError((reason && reason.stack) || reason || 'Unhandled promise rejection');
+    });
+  })();
+</script>
+`;
+
+const injectPreviewDiagnostics = (html: string) => {
+  const trimmedHtml = html.trim();
+  if (!trimmedHtml) {
+    return '';
+  }
+
+  if (trimmedHtml.includes('__lovablePreviewGuardInstalled')) {
+    return trimmedHtml;
+  }
+
+  if (/<head[^>]*>/i.test(trimmedHtml)) {
+    return trimmedHtml.replace(/<head([^>]*)>/i, `<head$1>${PREVIEW_ERROR_SNIPPET}`);
+  }
+
+  if (/<body[^>]*>/i.test(trimmedHtml)) {
+    return trimmedHtml.replace(/<body([^>]*)>/i, `<body$1>${PREVIEW_ERROR_SNIPPET}`);
+  }
+
+  return `${PREVIEW_ERROR_SNIPPET}${trimmedHtml}`;
+};
+
 export const PreviewArea: React.FC<PreviewAreaProps> = ({ files, previewHtml, viewMode, setViewMode }) => {
   const [activeFile, setActiveFile] = useState<FileNode | null>(null);
   const [key, setKey] = useState(0); // Used to force reload iframe
   const [isPreparingZip, setIsPreparingZip] = useState(false);
+  const preparedPreviewHtml = injectPreviewDiagnostics(previewHtml);
 
   // Select first file by default when files change
   useEffect(() => {
@@ -160,13 +224,27 @@ export const PreviewArea: React.FC<PreviewAreaProps> = ({ files, previewHtml, vi
           <>
             {/* Preview Mode */}
             <div className={`w-full h-full ${viewMode === ViewMode.PREVIEW ? 'block' : 'hidden'}`}>
-              <iframe
-                key={key}
-                title="Live Preview"
-                srcDoc={previewHtml}
-                className="w-full h-full bg-white border-none"
-                sandbox="allow-scripts allow-same-origin allow-forms"
-              />
+              {preparedPreviewHtml ? (
+                <iframe
+                  key={key}
+                  title="Live Preview"
+                  srcDoc={preparedPreviewHtml}
+                  className="w-full h-full bg-white border-none"
+                  sandbox="allow-scripts allow-same-origin allow-forms"
+                />
+              ) : (
+                <div className="flex h-full items-center justify-center bg-[#111827] px-6 text-center text-zinc-300">
+                  <div className="max-w-md">
+                    <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl border border-amber-300/20 bg-amber-400/10 text-amber-100">
+                      <EyeIcon className="h-6 w-6" />
+                    </div>
+                    <h3 className="text-base font-semibold text-white">Preview HTML was not renderable</h3>
+                    <p className="mt-2 text-sm text-zinc-400">
+                      Gemini returned files, but the preview document was empty or malformed. Open the Code tab or retry the request.
+                    </p>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Code Mode */}

@@ -1,6 +1,6 @@
 # Lovable Clone: AI App Builder
 
-A production-style React + TypeScript application that converts natural language prompts into a generated app preview and code workspace using Gemini, now backed by Firebase Authentication and Firestore chat history.
+A production-style React + TypeScript application that converts natural language prompts into a generated app preview and code workspace using Gemini, now backed by Firebase Authentication, Firestore chat history, and per-user Gemini API keys.
 
 ## Why This Project Stands Out
 
@@ -17,6 +17,8 @@ A production-style React + TypeScript application that converts natural language
 - One user request = one Gemini API call (duplicate submit protection).
 - API call logging with totals in console (`total`, `success`, `failed`, `inFlight`).
 - Dedicated login/sign-up page with email/password and Google login via Firebase Authentication.
+- Mandatory per-user Gemini API key save before workspace use.
+- Settings panel to update Gemini API key and trigger password reset.
 - Per-user chat history stored in Firestore.
 - Export generated output:
   - download full project as `.zip`
@@ -34,10 +36,11 @@ A production-style React + TypeScript application that converts natural language
 
 ```text
 User Prompt
-  -> App.tsx (request orchestration + auth + cloud persistence)
-  -> services/geminiService.ts (Gemini call + metrics logging)
+  -> App.tsx (request orchestration + auth + user settings + cloud persistence)
+  -> services/geminiService.ts (Gemini call + API-key validation + metrics logging)
   -> services/firebase.ts (Firebase app + auth + firestore bootstrap)
   -> services/workspaceService.ts (per-user workspace CRUD)
+  -> services/userSettingsService.ts (per-user Gemini API key storage)
   -> GeneratedApp payload (previewHtml + files + explanation)
   -> PreviewArea.tsx (preview/code/extract/download)
   -> ChatArea.tsx (conversation timeline + input)
@@ -55,10 +58,15 @@ User Prompt
 |-- services/
 |   |-- firebase.ts
 |   |-- geminiService.ts
+|   |-- userSettingsService.ts
 |   `-- workspaceService.ts
 `-- components/
+    |-- ApiKeyGate.tsx
+    |-- AuthPage.tsx
     |-- ChatArea.tsx
+    |-- HistoryPanel.tsx
     |-- PreviewArea.tsx
+    |-- SettingsPanel.tsx
     `-- Icons.tsx
 ```
 
@@ -77,11 +85,7 @@ npm install
 
 ### Environment Setup
 
-Create `.env.local` in project root:
-
-```env
-GEMINI_API_KEY=your_gemini_api_key
-```
+No shared Gemini API key is required by default anymore. Each signed-in user saves their own Gemini API key inside the app before they can use the workspace.
 
 ### Firebase Setup
 
@@ -128,8 +132,11 @@ This makes debugging and usage tracking straightforward during demos and intervi
 ## Persistence and Export
 
 - Firestore path: `users/{uid}/workspaces/{workspaceId}`
+- Firestore settings path: `users/{uid}/settings/preferences`
 - Unauthenticated users land on a separate auth page before entering the workspace.
 - Signed-in users open a separate History panel to browse and continue any previous chat.
+- If no Gemini API key is saved for the user, a required popup blocks the workspace until they save one.
+- Settings lets the user review their email, send a password-reset email, and update or remove their saved Gemini key.
 - Each signed-in user sees only their own saved chats.
 - Latest workspace auto-loads after login.
 - Export options from preview/code header:
@@ -146,8 +153,10 @@ This makes debugging and usage tracking straightforward during demos and intervi
 
 - Never commit real API keys.
 - Keep `.env.local` private and rotate keys if exposed.
+- This project stores each user’s Gemini API key in that user’s own Firestore settings document. That is practical for this frontend-only setup, but the strongest security model would move key handling to a backend you control.
 - Firestore rules should always restrict access to `request.auth.uid == userId`.
 
 ## Demo Link
 
 - AI Studio reference: `https://ai.studio/apps/drive/1CpgquTNczq5bVAfSbEZJ_SUV7iSPwSoi`
+

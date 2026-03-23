@@ -30,6 +30,12 @@ export interface WorkspaceSummary {
   messageCount: number;
 }
 
+export interface UserSettings {
+  geminiApiKey: string;
+  hasGeminiApiKey: boolean;
+  updatedAt: number;
+}
+
 export interface GeneratedApp {
   previewHtml: string;
   files: FileNode[];
