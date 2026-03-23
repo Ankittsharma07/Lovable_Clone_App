@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from 'react';
-import { ChatMessage, GenerationStatus, WorkspaceSummary } from '../types';
+import { ChatMessage, GenerationStatus } from '../types';
 import { LoaderIcon, SendIcon, SparklesIcon } from './Icons';
 
 interface ChatAreaProps {
@@ -12,22 +12,10 @@ interface ChatAreaProps {
   userEmail: string;
   onLogout: () => void;
   authBusy: boolean;
-  workspaces: WorkspaceSummary[];
-  activeWorkspaceId: string | null;
-  onSelectWorkspace: (workspaceId: string) => void;
   onStartNewChat: () => void;
+  onOpenHistory: () => void;
   isWorkspaceLoading: boolean;
-  isWorkspaceSaving: boolean;
-  workspaceError: string | null;
 }
-
-const formatHistoryTimestamp = (timestamp: number) =>
-  new Date(timestamp).toLocaleString([], {
-    month: 'short',
-    day: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-  });
 
 export const ChatArea: React.FC<ChatAreaProps> = ({
   messages,
@@ -39,13 +27,9 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
   userEmail,
   onLogout,
   authBusy,
-  workspaces,
-  activeWorkspaceId,
-  onSelectWorkspace,
   onStartNewChat,
+  onOpenHistory,
   isWorkspaceLoading,
-  isWorkspaceSaving,
-  workspaceError,
 }) => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -89,78 +73,31 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
       </div>
 
       <div className="border-b border-white/10 bg-black/20 px-4 py-3">
-        <div className="space-y-3">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <p className="text-sm font-semibold text-white">{userEmail}</p>
-              <p className="text-xs text-zinc-400">Your sessions are saved in Firestore under this account.</p>
-            </div>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={onStartNewChat}
-                className="rounded-full border border-white/15 bg-white/5 px-3 py-1.5 text-xs text-zinc-200 transition hover:bg-white/10"
-              >
-                New chat
-              </button>
-              <button
-                onClick={onLogout}
-                disabled={authBusy}
-                className="rounded-full border border-red-300/25 bg-red-500/10 px-3 py-1.5 text-xs text-red-100 transition hover:bg-red-500/20 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                Logout
-              </button>
-            </div>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <p className="text-sm font-semibold text-white">{userEmail}</p>
+            <p className="text-xs text-zinc-400">Use History to reopen any previous chat and continue it.</p>
           </div>
-
-          <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-3">
-            <div className="mb-2 flex items-center justify-between">
-              <p className="text-xs uppercase tracking-[0.2em] text-zinc-400">Chat History</p>
-              <span className="text-xs text-zinc-500">{workspaces.length} saved</span>
-            </div>
-
-            {isWorkspaceLoading ? (
-              <div className="rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm text-zinc-300">
-                Loading saved session...
-              </div>
-            ) : workspaces.length === 0 ? (
-              <div className="rounded-xl border border-dashed border-white/10 bg-black/20 px-3 py-2 text-sm text-zinc-400">
-                No saved sessions yet. Start your first chat.
-              </div>
-            ) : (
-              <div className="max-h-44 space-y-2 overflow-y-auto pr-1">
-                {workspaces.map((workspace) => (
-                  <button
-                    key={workspace.id}
-                    onClick={() => onSelectWorkspace(workspace.id)}
-                    className={`w-full rounded-xl border px-3 py-2 text-left transition ${
-                      workspace.id === activeWorkspaceId
-                        ? 'border-cyan-300/30 bg-cyan-300/10'
-                        : 'border-white/10 bg-black/20 hover:border-white/20 hover:bg-white/[0.04]'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between gap-3">
-                      <span className="truncate text-sm font-medium text-white">{workspace.title}</span>
-                      <span className="shrink-0 text-[11px] text-zinc-500">
-                        {formatHistoryTimestamp(workspace.updatedAt)}
-                      </span>
-                    </div>
-                    <div className="mt-1 text-[11px] text-zinc-400">
-                      {workspace.messageCount} messages | {workspace.requestCount} requests
-                    </div>
-                  </button>
-                ))}
-              </div>
-            )}
-
-            {workspaceError && (
-              <div className="mt-3 rounded-xl border border-red-300/20 bg-red-500/10 px-3 py-2 text-xs text-red-200">
-                {workspaceError}
-              </div>
-            )}
-
-            {isWorkspaceSaving && (
-              <p className="mt-3 text-xs text-emerald-200">Syncing your latest changes to Firestore...</p>
-            )}
+          <div className="flex items-center gap-2">
+            <button
+              onClick={onOpenHistory}
+              className="rounded-full border border-cyan-300/25 bg-cyan-400/10 px-3 py-1.5 text-xs text-cyan-100 transition hover:bg-cyan-400/15"
+            >
+              History
+            </button>
+            <button
+              onClick={onStartNewChat}
+              className="rounded-full border border-white/15 bg-white/5 px-3 py-1.5 text-xs text-zinc-200 transition hover:bg-white/10"
+            >
+              New chat
+            </button>
+            <button
+              onClick={onLogout}
+              disabled={authBusy}
+              className="rounded-full border border-red-300/25 bg-red-500/10 px-3 py-1.5 text-xs text-red-100 transition hover:bg-red-500/20 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              Logout
+            </button>
           </div>
         </div>
       </div>
@@ -171,7 +108,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
             <SparklesIcon className="mb-4 h-12 w-12 text-cyan-300" />
             <h2 className="mb-2 text-xl font-semibold text-zinc-100">What do you want to build?</h2>
             <p className="max-w-xs text-center text-sm text-zinc-400">
-              Describe your app, generate code, and the full conversation will stay attached to your account.
+              Describe your app, generate code, and reopen earlier chats anytime from the History panel.
             </p>
           </div>
         ) : (

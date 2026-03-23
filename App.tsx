@@ -20,6 +20,7 @@ import {
 } from './services/workspaceService';
 import { AuthPage } from './components/AuthPage';
 import { ChatArea } from './components/ChatArea';
+import { HistoryPanel } from './components/HistoryPanel';
 import { PreviewArea } from './components/PreviewArea';
 
 const SAVE_DEBOUNCE_MS = 900;
@@ -70,6 +71,7 @@ const App: React.FC = () => {
   const [lastSavedAt, setLastSavedAt] = useState<number | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>(ViewMode.PREVIEW);
   const [status, setStatus] = useState<GenerationStatus>({ isGenerating: false, step: 'idle' });
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
 
   const [authReady, setAuthReady] = useState(false);
   const [user, setUser] = useState<User | null>(null);
@@ -299,16 +301,19 @@ const App: React.FC = () => {
   const handleSelectWorkspace = useCallback(
     async (workspaceId: string) => {
       if (!user || workspaceId === activeWorkspaceId) {
+        setIsHistoryOpen(false);
         return;
       }
 
       await loadWorkspace(user.uid, workspaceId);
+      setIsHistoryOpen(false);
     },
     [activeWorkspaceId, loadWorkspace, user],
   );
 
   const handleStartNewChat = useCallback(() => {
     resetWorkspaceState();
+    setIsHistoryOpen(false);
   }, [resetWorkspaceState]);
 
   const handleSend = useCallback(async () => {
@@ -478,6 +483,12 @@ const App: React.FC = () => {
               <span className="rounded-full border border-fuchsia-300/30 bg-fuchsia-400/10 px-3 py-1 text-fuchsia-100">Chats: {workspaces.length}</span>
               <span className="rounded-full border border-amber-300/30 bg-amber-300/10 px-3 py-1 text-amber-50">Last sync: {lastSavedLabel}</span>
               <button
+                onClick={() => setIsHistoryOpen(true)}
+                className="rounded-full border border-cyan-300/25 bg-cyan-400/10 px-3 py-1 text-cyan-100 transition hover:bg-cyan-400/15"
+              >
+                History
+              </button>
+              <button
                 onClick={handleStartNewChat}
                 className="rounded-full border border-white/20 bg-white/10 px-3 py-1 text-white transition hover:bg-white/15"
               >
@@ -500,13 +511,9 @@ const App: React.FC = () => {
                 userEmail={user.email ?? 'Signed-in user'}
                 onLogout={handleLogout}
                 authBusy={authBusy}
-                workspaces={workspaces}
-                activeWorkspaceId={activeWorkspaceId}
-                onSelectWorkspace={handleSelectWorkspace}
                 onStartNewChat={handleStartNewChat}
+                onOpenHistory={() => setIsHistoryOpen(true)}
                 isWorkspaceLoading={isWorkspaceLoading}
-                isWorkspaceSaving={isWorkspaceSaving}
-                workspaceError={workspaceError}
               />
             </section>
             <section className="min-h-0 overflow-hidden rounded-2xl border border-white/10 bg-black/35 shadow-[0_20px_55px_-35px_rgba(0,0,0,0.95)] backdrop-blur">
@@ -519,6 +526,18 @@ const App: React.FC = () => {
             </section>
           </div>
         </main>
+
+        <HistoryPanel
+          isOpen={isHistoryOpen}
+          onClose={() => setIsHistoryOpen(false)}
+          workspaces={workspaces}
+          activeWorkspaceId={activeWorkspaceId}
+          onSelectWorkspace={handleSelectWorkspace}
+          onStartNewChat={handleStartNewChat}
+          isWorkspaceLoading={isWorkspaceLoading}
+          isWorkspaceSaving={isWorkspaceSaving}
+          workspaceError={workspaceError}
+        />
       </div>
     </div>
   );

@@ -129,6 +129,7 @@ This makes debugging and usage tracking straightforward during demos and intervi
 
 - Firestore path: `users/{uid}/workspaces/{workspaceId}`
 - Unauthenticated users land on a separate auth page before entering the workspace.
+- Signed-in users open a separate History panel to browse and continue any previous chat.
 - Each signed-in user sees only their own saved chats.
 - Latest workspace auto-loads after login.
 - Export options from preview/code header:
